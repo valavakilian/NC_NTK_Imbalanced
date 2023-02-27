@@ -6,13 +6,18 @@ import torch.nn.functional as F
 
 class CDTLoss(nn.Module):
 
-    def __init__(self, delta_list, gamma=0.3, weight=None, reduction=None):
+    def __init__(self, delta_list, gamma=0.3, weight=None, reduction=None, device = None):
         super(CDTLoss, self).__init__()
         Delta_list = np.array(delta_list) ** gamma
         Delta_list = len(Delta_list) * Delta_list / sum(Delta_list)
         # Delta_list = Delta_list / np.min(Delta_list)
-        print("Delta_list" + str(Delta_list))
-        self.Delta_list = torch.cuda.FloatTensor(Delta_list)
+        # print("Delta_list" + str(Delta_list))
+        # if device == None:
+        #     self.Delta_list = torch.FloatTensor(Delta_list)
+        # else:
+        #     self.Delta_list = torch.cuda.FloatTensor(Delta_list)
+        self.Delta_list = torch.FloatTensor(Delta_list)
+        
         # self.Delta_list = torch.FloatTensor(Delta_list)
         self.weight = weight
         self.reduction = reduction

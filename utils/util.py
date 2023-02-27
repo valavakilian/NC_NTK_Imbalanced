@@ -148,7 +148,7 @@ def eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion):
     """Train a client_model on the train_loder data."""
     model.train()
     model_c.train()
-    round_idx = 0
+    batch_idx = 0
     for data, targets in train_loader:
         grads_data,targets_onehot,targets = eNTK_loader(model,data, targets,params)
         # eval on train
@@ -165,8 +165,8 @@ def eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion):
 
         train_acc = targets_pred_train.eq(targets.to(params['device'])).sum() / (1.0 * logits_class_train.shape[0])
 
-        print('Round %d: train accuracy=%0.5g' % (round_idx, train_acc.item()))
-        round_idx+=1
+        print('batch %d: train accuracy=%0.5g' % (batch_idx, train_acc.item()))
+        batch_idx+=1
     return train_acc
 
 def imbalance(R,maj_classes= [0, 1, 2, 3, 4],min_classes= [5, 6, 7, 8, 9]):
