@@ -118,7 +118,6 @@ def compute_eNTK(model, X, subsample_size=100000, seed = 123):
     grads = None
     for i in tqdm(range(X.size()[0])):
         model.zero_grad()
-        print(model.forward(X[i : i+1]))
         model.forward(X[i : i+1])[0].backward()
         
 
@@ -154,7 +153,6 @@ def eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion):
     model.train()
     model_c.train()
     round_idx = 0
-    print(len(train_loader))
     for data, targets in train_loader:
         grads_data,targets_onehot,targets = eNTK_loader(model,data, targets,params)
         # eval on train

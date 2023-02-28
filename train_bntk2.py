@@ -34,7 +34,7 @@ params = {
         'num_rounds':100,
         'round':5,
         "lr_decay":0.5,
-        "epochs":10
+        "epochs":1
     }
 class features:
             pass
@@ -164,12 +164,12 @@ f.flush()
 save_graph = graphs()
 root_path = "NTK_retrain_CDT_R_" + str(R) + "/cdt_gamma_" + str(0.5) + "_version_" + str(0)
 # root_path = "./here"
-save_path = root_path
+# save_path = root_path
 
 for round_idx in range(params['epochs']):
     torch.cuda.empty_cache()
 
-    train_acc = eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion)
+    train_acc,model_c = eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion)
 
     lr_scheduler.step()
 
@@ -183,16 +183,16 @@ for round_idx in range(params['epochs']):
             # test_acc = targets_pred_test.eq(target_eval).sum() / (1.0 * logits_class_test.shape[0])
             print('Round %d: train accuracy=%0.5g test accuracy=%0.5g' % (round_idx, train_acc.item(), test_acc.item()))
         
+        print(model_c.weight.cpu().detach().numpy())
+        save_graph.W.append(model_c.weight.cpu().detach().numpy())
 
-        save_graph.W.append(model_c.weight.cpu().numpy())
-
-        this_epoch_W = model_c.weight.cpu().numpy()
+        this_epoch_W = model_c.weight.cpu().detach().numpy()
         f.write("------------------------------\n")
         f.write("Epoch " + str(round_idx) + " -> \n")
         f.write("train_acc: " + str(train_acc) + " -> \n")
         f.flush()
 
-path_train = save_path + 'graphs_train_save_{}_{}_R{}.pkl'.format("NTK_CDT_0.5", "CIFAR10", int(R))
+path_train = params['save_path'] + 'graphs_train_save_{}_{}_R{}.pkl'.format("NTK_CDT_0.5", "CIFAR10", int(R))
 f_train = open(path_train, "wb")
 pickle.dump(save_graph, f_train)
 f_train.close()
