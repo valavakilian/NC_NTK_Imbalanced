@@ -12,10 +12,12 @@ from pretrain_code.generate_cifar import IMBALANCECIFAR10
 from loss.loss_imbalance import *
 import torchvision.models as models
 from model.classifier import NTK_classify
-from torchsummary import summary
+import pickle
+
+
 params = {
-        "lr" : 0.00001,
-        "batch_size": 256,
+        "lr" : 0.1,
+        "batch_size": 128,
         "gamma" : 0.5,
         "R": 10,
         "local_steps": 100 ,
@@ -31,13 +33,17 @@ params = {
         'device': 'cuda:0',
         'num_rounds':100,
         'round':5,
-        'weight_decay':5e-3
+        "lr_decay":0.5,
+        "epochs":10
     }
+class features:
+            pass
 
 
+def hook(self, input, output):
+    features.value = input[0].clone()
 torch.manual_seed(params["seed"])
 torch.cuda.manual_seed(params["seed"])
-
 
 R = params['R']
 delta_list = [R, R, R, R, R, 1, 1, 1, 1, 1]
@@ -61,17 +67,13 @@ C                   = 10
 if params['dataset_name'] == 'CIFAR10':
     input_ch        = 3
 
-class features:
-            pass
+################## DATA LOADER 
+data_path = './data'
 
-
-def hook(self, input, output):
-    features.value = input[0].clone()
-
-train_dataset = IMBALANCECIFAR10(params['data_path'], imb_type=params['imb_type'],
-                                rand_number=params['seed'], train=True, download=True,
+train_dataset = IMBALANCECIFAR10(data_path, imb_type=params['imb_type'],
+                                rand_number=params['seed'], train=True, download=False,
                                 transform=transform_train, n_c_train_target=n_c_train_target, classes=classes)
-val_dataset = datasets.CIFAR10(params['data_path'], train=False, download=True, transform=transform_val)
+val_dataset = datasets.CIFAR10(data_path, train=False, download=False, transform=transform_val)
 
 n_c_test_target = [0 for _ in range(0,K)]
 for val_data in val_dataset:
@@ -82,13 +84,11 @@ print("^"*100)
 print("n_c_test_target: " + str(n_c_test_target))
 print("^"*100)
 
-
 cls_num_list = train_dataset.get_cls_num_list()
 cls_priors = [cls_num / sum(cls_num_list) for cls_num in cls_num_list]
 print('\nTotal number of samples: ', sum(cls_num_list))
 print('cls num list:')
 print(cls_num_list)
-
 
 train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=params['batch_size'], shuffle=(params["train_sampler"] is None),
@@ -115,65 +115,84 @@ else:
     print('the loss is not supported')
 
 model = models.resnet18(pretrained=False, num_classes=C)
-
 model.conv1 = nn.Conv2d(input_ch, model.conv1.weight.shape[0], 3, 1, 1, bias=False) # Small dataset filter size used by He et al. (2015)
 model.maxpool = nn.MaxPool2d(kernel_size=1, stride=1, padding=0)
 model.fc = nn.Linear(in_features=512, out_features=10, bias=False)
-
 model2 = torch.load(params['pretrain_path'])
 
 model.load_state_dict(model2.state_dict(),strict =True)
 ### random reinitialized the classifier
 model.fc = nn.Linear(512, 1).to(params['device'])
-
 model = model.to(params['device'])
-summary(model, (3, 224, 224))
 
 # Init and load model ckpt
 print('load model')
+######################################
+epoch_list = [1,   3,   5,   7,   9,
+                11,  20,  30,  40,  60,
+                80, 101, 120, 140, 160,
+                180, 201, 220, 235, 245, 250, 260,
+                275, 280, 290, 299, 305, 310, 315, 
+                320, 325, 330, 335, 340, 345, 349, 350]
+epochs_lr_decay     = [116, 232]
+######################################
 
 # Init linear models
-model_c = NTK_classify(500000, 10).to(params['device'])
-
+model_c = NTK_classify(100000, 10).to(params['device'])
 
 optimizer = optim.SGD(model_c.parameters(),
-                        lr=params['lr'],
-                        weight_decay=params['weight_decay']
-                        )
+                        lr=params['lr'])
 
-# theta = torch.zeros(100000, 10).to(params['device'])
-# theta = torch.tensor(theta, requires_grad=False)
+lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer,
+                                                milestones=epochs_lr_decay,
+                                                gamma=params['lr_decay'])
+
 # Test
 ## batch sampling 
-grad_all = []
-target_all = []
-target_onehot_all = []
 for data, targets in test_loader:
     grad_eval, target_eval_onehot, target_eval  = eNTK_loader(model, data, targets ,params)
-    grad_all.append(copy.deepcopy(grad_eval).cpu())
-    target_all.append(copy.deepcopy(target_eval).cpu())
-    target_onehot_all.append(copy.deepcopy(target_eval_onehot).cpu())
-# iters = 10
-# grad_all = []
-# target_all = []
-# target_onehot_all = []
-# for _ in range(len(train_loader)):
-#     grad, target_onehot, target = eNTK_loader(model, train_loader,theta)
-#     grad_all.append(copy.deepcopy(grad).cpu())
-#     target_all.append(copy.deepcopy(target).cpu())
-#     target_onehot_all.append(copy.deepcopy(target_onehot).cpu())
-#     del grad
-#     del target_onehot
-#     del target
-#     torch.cuda.empty_cache()
+    break
 
-for round_idx in range(params['num_rounds']):
-    train_acc,model_c = eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion)
+class graphs:
+    def __init__(self):
+        self.W = []
 
-# eval on test
-    model_c.eval()
-    with torch.no_grad():
-        logits_class_test = model_c(torch.cat(grad_all).to(params['device']))
-        _, targets_pred_test = logits_class_test.max(1)
-        test_acc = targets_pred_test.eq(torch.cat(target_all).cuda()).sum() / (1.0 * logits_class_test.shape[0])
-        print('Round %d: train accuracy=%0.5g test accuracy=%0.5g' % (round_idx, train_acc.item(), test_acc.item()))
+f = open("NTK_retrain_CDT_R_" + str(R)+ "_NTK_Prints.txt", "w")
+f.write("Create File!\n")
+f.flush()
+
+save_graph = graphs()
+root_path = "NTK_retrain_CDT_R_" + str(R) + "/cdt_gamma_" + str(0.5) + "_version_" + str(0)
+# root_path = "./here"
+save_path = root_path
+
+for round_idx in range(params['epochs']):
+    torch.cuda.empty_cache()
+
+    train_acc = eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion)
+
+    lr_scheduler.step()
+
+    if round_idx in epoch_list:
+        # eval on test
+        model_c.eval()
+        with torch.no_grad():
+            logits_class_test = model_c(grad_eval.to(params['device']))
+            _, targets_pred_test = logits_class_test.max(1)
+            test_acc = targets_pred_test.eq(target_eval.cuda()).sum() / (1.0 * logits_class_test.shape[0])
+            # test_acc = targets_pred_test.eq(target_eval).sum() / (1.0 * logits_class_test.shape[0])
+            print('Round %d: train accuracy=%0.5g test accuracy=%0.5g' % (round_idx, train_acc.item(), test_acc.item()))
+        
+
+        save_graph.W.append(model_c.weight.cpu().numpy())
+
+        this_epoch_W = model_c.weight.cpu().numpy()
+        f.write("------------------------------\n")
+        f.write("Epoch " + str(round_idx) + " -> \n")
+        f.write("train_acc: " + str(train_acc) + " -> \n")
+        f.flush()
+
+path_train = save_path + 'graphs_train_save_{}_{}_R{}.pkl'.format("NTK_CDT_0.5", "CIFAR10", int(R))
+f_train = open(path_train, "wb")
+pickle.dump(save_graph, f_train)
+f_train.close()

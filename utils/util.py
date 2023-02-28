@@ -114,10 +114,13 @@ def compute_eNTK(model, X, subsample_size=100000, seed = 123):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     random_index = torch.randperm(11169345)[:subsample_size]
+    # print(random_index)
     grads = None
     for i in tqdm(range(X.size()[0])):
         model.zero_grad()
+        print(model.forward(X[i : i+1]))
         model.forward(X[i : i+1])[0].backward()
+        
 
         grad = []
         for param in params:
@@ -135,7 +138,9 @@ def compute_eNTK(model, X, subsample_size=100000, seed = 123):
 
 
 def eNTK_loader(model,data, targets,params):
+    model.train()
     grads_data = compute_eNTK(model, data.to(params['device']),seed=params['seed'])
+    # print(grads_data)
     grads_data = grads_data.float().to(params['device'])
     targets = targets.to(params['device'])
     # gradient
@@ -149,6 +154,7 @@ def eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion):
     model.train()
     model_c.train()
     round_idx = 0
+    print(len(train_loader))
     for data, targets in train_loader:
         grads_data,targets_onehot,targets = eNTK_loader(model,data, targets,params)
         # eval on train
@@ -167,7 +173,8 @@ def eNTK_trainer(model, model_c,train_loader,params,optimizer,criterion):
 
         print('Round %d: train accuracy=%0.5g' % (round_idx, train_acc.item()))
         round_idx+=1
-    return train_acc
+        # break
+    return train_acc,model_c
 
 def imbalance(R,maj_classes= [0, 1, 2, 3, 4],min_classes= [5, 6, 7, 8, 9]):
     # number of samples
